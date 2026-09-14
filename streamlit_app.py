@@ -19,6 +19,7 @@ import torch.nn.functional as F
 import torchvision.transforms as T
 
 from model import load_model, load_oil_detector
+from noaa_oils import select_openoil_type_grounded, get_adios_summary
 
 # =========================================================================
 # Configuration & Constants
@@ -238,6 +239,20 @@ with st.sidebar:
         "2. **Stage 2 (ResNet-18 + Swin-Tiny):** 3-Class Oil thickness estimation (Runs only if Oil is detected)"
     )
 
+    st.markdown("---")
+    st.subheader("🛢️ NOAA ADIOS Database")
+    try:
+        adios_summary = get_adios_summary()
+        total = sum(adios_summary.values())
+        if total > 0:
+            st.success(f"✅ {total} real oils loaded")
+            for cls, count in adios_summary.items():
+                st.text(f"{cls.replace('_', ' ')}: {count} oils")
+        else:
+            st.warning("⚠️ ADIOS DB not yet downloaded\n(will clone on first oil detection)")
+    except Exception:
+        st.info("ADIOS DB: Loading on demand")
+
 
 # =========================================================================
 # Main App Interface
@@ -251,7 +266,7 @@ except Exception as e:
     st.error(f"❌ Error loading model checkpoints: {e}")
     st.stop()
 
-tab_single, tab_batch, tab_arch = st.tabs(["🔍 Single Scene Analysis", "📁 Batch Processing", "🧠 Model Architecture"])
+tab_single, tab_batch, tab_arch, tab_noaa = st.tabs(["🔍 Single Scene Analysis", "📁 Batch Processing", "🧠 Model Architecture", "🛢️ NOAA ADIOS Oils"])
 
 # -------------------------------------------------------------------------
 # TAB 1: Single Scene Analysis
@@ -328,6 +343,33 @@ with tab_single:
                         st.write(f"**{cls.replace('_', ' ')}**")
                     with col_bar:
                         st.progress(prob, text=f"{prob*100:.2f}%")
+
+                # ---- NOAA ADIOS Grounded Oil Recommendation ----
+                st.markdown("#### 🛢️ NOAA ADIOS Grounded Oil Recommendation")
+                with st.spinner("Looking up real NOAA-documented oil..."):
+                    grounded = select_openoil_type_grounded(t_cls)
+
+                if "real_oil_name" in grounded:
+                    st.markdown(f"""
+                    <div style="background: rgba(0,210,255,0.08); border: 1px solid rgba(0,210,255,0.3);
+                                border-radius: 10px; padding: 16px; margin-top: 8px;">
+                        <p style="margin:0; font-size:0.85rem; color:#8892b0;">NOAA ADIOS Real Oil Match</p>
+                        <p style="margin:4px 0; font-size:1.15rem; font-weight:700; color:#00d2ff;">
+                            🛢️ {grounded['real_oil_name']}
+                        </p>
+                        <table style="width:100%; font-size:0.9rem; color:#cbd5e1;">
+                            <tr><td><b>API Gravity</b></td><td>{grounded.get('api_gravity', 'N/A')}</td></tr>
+                            <tr><td><b>Source Location</b></td><td>{grounded.get('source_location', 'N/A')}</td></tr>
+                            <tr><td><b>NOAA Labels</b></td><td>{', '.join(grounded.get('noaa_labels', []))}</td></tr>
+                            <tr><td><b>OpenDrift Oil Type</b></td><td><code>{grounded['opendrift_oiltype']}</code></td></tr>
+                        </table>
+                        <p style="margin:8px 0 0; font-size:0.8rem; color:#8892b0;">
+                            Fallback generic: <code>{grounded.get('fallback_generic_type', 'N/A')}</code>
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.info(f"ℹ️ {grounded.get('notes', 'No ADIOS match found.')} Using: `{grounded['opendrift_oiltype']}`")
             else:
                 st.info("ℹ️ Stage 2 was not triggered because no oil signature was detected in Stage 1.")
 
@@ -425,3 +467,76 @@ with tab_arch:
         - **Moderate:** Intermediate thickness/emulsion.
         - **Thick Emulsified:** Heavy emulsion / concentrated oil slick.
     """)
+
+
+# -------------------------------------------------------------------------
+# TAB 4: NOAA ADIOS Oil Database Browser
+# -------------------------------------------------------------------------
+with tab_noaa:
+    st.subheader("🛢️ NOAA ADIOS Oil Database — Thickness Class Browser")
+    st.markdown("""
+    This tab browses the **live NOAA ADIOS database** (1,400+ lab-tested oils), bucketed into the
+    three SAR thickness classes using NOAA's own official labels — the same source used by
+    **OpenDrift / OpenOil** for oil spill trajectory modelling.
+    """)
+
+    adios_summary = get_adios_summary()
+    total_oils = sum(adios_summary.values())
+
+    if total_oils == 0:
+        st.warning("""
+        ⚠️ **NOAA ADIOS database not yet downloaded.**
+
+        The database will be cloned automatically (~300 MB, one-time) when you run an
+        oil-detected image in the Single Scene tab, or you can trigger it manually below.
+        """)
+        if st.button("⬇️ Download NOAA ADIOS Database Now"):
+            from noaa_oils import _ensure_adios_cloned, _load_adios, _adios_cache
+            with st.spinner("Cloning NOAA ADIOS repository (~300 MB)..."):
+                success = _ensure_adios_cloned()
+            if success:
+                st.success("✅ NOAA ADIOS database downloaded! Reload the page.")
+                st.rerun()
+            else:
+                st.error("❌ Clone failed. Please check your internet connection and that git is installed.")
+    else:
+        st.success(f"✅ **{total_oils} real NOAA-documented oils** loaded from ADIOS database.")
+
+        selected_class = st.selectbox(
+            "Select Thickness Class to Browse:",
+            ["Thin_Sheen", "Moderate", "Thick_Emulsified"],
+            format_func=lambda x: x.replace("_", " "),
+        )
+        region_filter = st.text_input(
+            "Filter by Region (optional)",
+            placeholder="e.g. Gulf, Norway, Saudi Arabia, Alaska",
+        )
+
+        from noaa_oils import _load_adios
+        db = _load_adios()
+        oils = db.get(selected_class, [])
+        if region_filter:
+            oils = [o for o in oils if region_filter.lower() in o["location"].lower()]
+
+        st.markdown(f"**{len(oils)} oil(s) found** for `{selected_class.replace('_', ' ')}`" +
+                    (f" in regions matching *{region_filter}*" if region_filter else ""))
+
+        import pandas as pd
+        if oils:
+            df_oils = pd.DataFrame([{
+                "Oil Name":        o["name"],
+                "API Gravity":     o.get("api", "N/A"),
+                "Location":        o.get("location", "Unknown"),
+                "NOAA Labels":     ", ".join(o.get("labels", [])),
+            } for o in oils])
+            st.dataframe(df_oils, use_container_width=True)
+
+            csv_noaa = df_oils.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="📥 Export Oil List as CSV",
+                data=csv_noaa,
+                file_name=f"noaa_adios_{selected_class}.csv",
+                mime="text/csv",
+            )
+        else:
+            st.info("No oils found for the selected class/region filter.")

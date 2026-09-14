@@ -4,3 +4,5 @@ cloudflared.exe
 *.log
 tunnel.txt
 .venv/
+noaa-oil-data/
+.gradio/
