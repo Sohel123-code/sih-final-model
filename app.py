@@ -19,6 +19,7 @@ import numpy as np
 from PIL import Image
 import gradio as gr
 from model import load_model, load_oil_detector
+from noaa_oils import select_openoil_type_grounded
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -137,6 +138,24 @@ def predict(image: Image.Image):
             else:
                 rows += f"| {cls} | {prob} | |\n"
 
+        # ── NOAA ADIOS oil match ──
+        noaa = select_openoil_type_grounded(pred_class)
+        noaa_section = "\n---\n\n**🛢️ NOAA ADIOS Oil Match**\n\n"
+        if noaa.get("real_oil_name"):
+            noaa_section += (
+                f"| Property | Value |\n"
+                f"|---|---|\n"
+                f"| **Oil Name** | {noaa['real_oil_name']} |\n"
+                f"| **API Gravity** | {noaa.get('api_gravity', 'N/A')} |\n"
+                f"| **Source Location** | {noaa.get('source_location', 'N/A')} |\n"
+                f"| **NOAA Labels** | {', '.join(noaa.get('noaa_labels', []))} |\n"
+                f"| **OpenDrift Oil Type** | `{noaa.get('opendrift_oiltype', 'N/A')}` |\n\n"
+            )
+        else:
+            noaa_section += (
+                f"Using generic placeholder: `{noaa.get('opendrift_oiltype', 'N/A')}`\n\n"
+            )
+
         result = (
             f'<div style="background:#FFEBEE; border-left:5px solid #B71C1C; '
             f'padding:12px 16px; border-radius:8px; margin-bottom:16px;">'
@@ -154,6 +173,7 @@ def predict(image: Image.Image):
             f"| Class | Probability | Status |\n"
             f"|---|---|---|\n"
             f"{rows}\n"
+            f"{noaa_section}"
             f"*Device: {DEVICE.upper()}*"
         )
         return result
@@ -238,6 +258,14 @@ def predict_batch(images: list):
                     else:
                         rows += f"| {cls} | {prob} | |\n"
 
+                # ── NOAA ADIOS oil match ──
+                noaa = select_openoil_type_grounded(pred_class)
+                noaa_line = ""
+                if noaa.get("real_oil_name"):
+                    noaa_line = f"**NOAA Match:** {noaa['real_oil_name']} (API {noaa.get('api_gravity', 'N/A')}) — `{noaa.get('opendrift_oiltype', '')}`\n\n"
+                else:
+                    noaa_line = f"**NOAA Match:** `{noaa.get('opendrift_oiltype', 'N/A')}` (generic)\n\n"
+
                 part = (
                     f'<div style="background:#FFEBEE; border-left:5px solid #B71C1C; '
                     f'padding:12px 16px; border-radius:8px; margin-bottom:10px;">'
@@ -252,6 +280,7 @@ def predict_batch(images: list):
                     f"| Class | Probability | Status |\n"
                     f"|---|---|---|\n"
                     f"{rows}\n"
+                    f"{noaa_line}"
                 )
 
             results_parts.append(part)
@@ -595,23 +624,23 @@ This application uses **two separate models** in sequence:
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Build demo at module level (required for HF Spaces Gradio SDK)
 # ---------------------------------------------------------------------------
+print(f"PyTorch: {torch.__version__}")
+print(f"Device : {DEVICE}")
+
+print("Loading Stage 1 model (Oil/No-Oil detector)...")
+get_oil_model()
+print("[OK] Stage 1 model loaded successfully!")
+
+print("Loading Stage 2 model (Thickness classifier)...")
+get_thickness_model()
+print("[OK] Stage 2 model loaded successfully!")
+
+demo = build_app()
+
 if __name__ == "__main__":
-    print(f"PyTorch: {torch.__version__}")
-    print(f"Device : {DEVICE}")
-
-    print("Loading Stage 1 model (Oil/No-Oil detector)...")
-    get_oil_model()
-    print("[OK] Stage 1 model loaded successfully!")
-
-    print("Loading Stage 2 model (Thickness classifier)...")
-    get_thickness_model()
-    print("[OK] Stage 2 model loaded successfully!")
-
     print("Launching Gradio app...\n")
-
-    demo = build_app()
     demo.launch(
         server_name="0.0.0.0",
         server_port=7860,
