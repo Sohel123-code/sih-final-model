@@ -1,13 +1,12 @@
 """
-app.py -- Gradio UI for CNN-Swin SAR Oil Spill Detector
+app.py -- Gradio UI for CNN-Swin SAR Oil Thickness Classifier
 
-Model: cnn_swin_v2_best.pth
+Model: cnn_swin_thickness_best.pth
 Architecture:
-  - CNN Branch: ResNet-18 backbone (512-dim features)
-  - Swin Branch: Swin-Tiny backbone (768-dim features)
-  - Fusion Trunk: Concat (1280-dim) -> Linear(512) -> BN -> ReLU -> Dropout(0.3)
-                  -> Linear(128) -> ReLU -> Dropout(0.3) -> Linear(2)
-  - Output Classes: [0: No_Oil, 1: Oil]
+  - CNN Branch:  ResNet-18 backbone → 512-dim features
+  - Swin Branch: Swin-Tiny backbone → 768-dim features
+  - Fusion:      Concat(1280) → Linear(512) → BN → ReLU
+  - Head:        Linear(512, 3) → [Thin_Sheen, Moderate, Thick_Emulsified]
 """
 import sys
 if hasattr(sys.stdout, 'reconfigure'):
@@ -19,19 +18,28 @@ import torch
 import numpy as np
 from PIL import Image
 import gradio as gr
-from model import load_oil_detector
+from model import load_model
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_CKPT_PATH = os.path.join(_BASE_DIR, "cnn_swin_v2_best.pth")
+MODEL_CKPT_PATH = os.path.join(_BASE_DIR, "cnn_swin_thickness_best.pth")
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 IMG_SIZE = 224
 
-LABELS = ["No_Oil", "Oil"]
-OIL_THRESHOLD = 0.50
+CLASS_LABELS = ["Thin_Sheen", "Moderate", "Thick_Emulsified"]
+CLASS_DESCS = {
+    "Thin_Sheen":       "Thin oil sheen — light surface film with minimal SAR backscatter dampening. High rate of natural dispersion expected.",
+    "Moderate":         "Moderate emulsion — intermediate thickness with notable SAR signature. Mechanical containment recommended.",
+    "Thick_Emulsified": "Thick emulsified oil — heavy emulsion with strong SAR backscatter suppression. Immediate response required.",
+}
+CLASS_COLORS = {
+    "Thin_Sheen":       ("#FFF3E0", "#E65100", "🟡"),
+    "Moderate":         ("#FFF8E1", "#F57F17", "🟠"),
+    "Thick_Emulsified": ("#FFEBEE", "#B71C1C", "🔴"),
+}
 
 # ---------------------------------------------------------------------------
 # Model Loader (Singleton)
@@ -39,12 +47,12 @@ OIL_THRESHOLD = 0.50
 _model = None
 
 def get_model():
-    """Lazy-load the CNN-Swin v2 Oil Detector model."""
+    """Lazy-load the CNN-Swin thickness classifier."""
     global _model
     if _model is None:
         if not os.path.exists(MODEL_CKPT_PATH):
             raise FileNotFoundError(f"Model checkpoint not found at: {MODEL_CKPT_PATH}")
-        _model = load_oil_detector(MODEL_CKPT_PATH, device=DEVICE)
+        _model = load_model(MODEL_CKPT_PATH, device=DEVICE)
     return _model
 
 # ---------------------------------------------------------------------------
@@ -74,44 +82,39 @@ def predict(image: Image.Image):
             logits = model(tensor)
             probs = torch.softmax(logits, dim=1).squeeze(0).cpu().numpy()
 
-        p_no_oil = float(probs[0]) * 100
-        p_oil    = float(probs[1]) * 100
-        is_oil   = p_oil >= (OIL_THRESHOLD * 100)
+        pred_idx   = int(np.argmax(probs))
+        pred_class = CLASS_LABELS[pred_idx]
+        confidence = float(probs[pred_idx]) * 100
+        pred_desc  = CLASS_DESCS[pred_class]
+        bg_color, text_color, emoji = CLASS_COLORS[pred_class]
 
-        if is_oil:
-            banner = (
-                f'<div style="background:#FFEBEE; border-left:6px solid #B71C1C; '
-                f'padding:16px 20px; border-radius:10px; margin-bottom:18px;">'
-                f'<span style="font-size:1.5rem; font-weight:800; color:#B71C1C; '
-                f'letter-spacing:0.5px;">⚠️ OIL SPILL DETECTED</span><br>'
-                f'<span style="font-size:0.9rem; color:#444;">Sentinel-1 SAR feature backscatter suppression verified</span>'
-                f'</div>'
-            )
-            oil_status = "🚨 High Confidence Spill" if p_oil > 80 else "⚠️ Possible Slick / Spill"
-        else:
-            banner = (
-                f'<div style="background:#E8F5E9; border-left:6px solid #2E7D32; '
-                f'padding:16px 20px; border-radius:10px; margin-bottom:18px;">'
-                f'<span style="font-size:1.5rem; font-weight:800; color:#2E7D32; '
-                f'letter-spacing:0.5px;">✅ NO OIL DETECTED</span><br>'
-                f'<span style="font-size:0.9rem; color:#444;">Clean sea surface or standard oceanic signature</span>'
-                f'</div>'
-            )
-            oil_status = "🛡️ Clean Sea"
+        # Build probability table rows
+        rows = ""
+        for i, cls in enumerate(CLASS_LABELS):
+            prob = f"{probs[i]*100:.2f}%"
+            _, _, cls_emoji = CLASS_COLORS[cls]
+            if i == pred_idx:
+                rows += f"| **{cls_emoji} {cls}** | **{prob}** | ✅ **Predicted** |\n"
+            else:
+                rows += f"| {cls_emoji} {cls} | {prob} | |\n"
 
         result = (
-            f"{banner}\n\n"
-            f"### 📊 Detection Analysis\n\n"
-            f"| Metric | Value | Status |\n"
-            f"|---|---|---|\n"
-            f"| **Oil Spill Probability** | **`{p_oil:.2f}%`** | {'🔴 DETECTED' if is_oil else '⚪'} |\n"
-            f"| **Clean Sea (No Oil)** | **`{p_no_oil:.2f}%`** | {'🟢 CLEAN' if not is_oil else '⚪'} |\n"
-            f"| **Decision Status** | `{oil_status}` | Threshold: `{OIL_THRESHOLD*100:.0f}%` |\n\n"
+            f'<div style="background:{bg_color}; border-left:6px solid {text_color}; '
+            f'padding:16px 20px; border-radius:10px; margin-bottom:18px;">'
+            f'<span style="font-size:1.5rem; font-weight:800; color:{text_color}; '
+            f'letter-spacing:0.5px;">{emoji} {pred_class.replace("_", " ").upper()}</span><br>'
+            f'<span style="font-size:0.9rem; color:#444;">SAR Oil Thickness Classification Complete</span>'
+            f'</div>\n\n'
+            f"**Confidence:** `{confidence:.1f}%`\n\n"
+            f"> {pred_desc}\n\n"
             f"---\n\n"
-            f"**🧠 Architecture Details**\n"
-            f"- **Checkpoint**: `cnn_swin_v2_best.pth`\n"
-            f"- **Backbone**: ResNet-18 (512-d) + Swin-Tiny (768-d)\n"
-            f"- **Inference Device**: `{DEVICE.upper()}`\n"
+            f"### 📊 Class Probabilities\n\n"
+            f"| Class | Probability | Status |\n"
+            f"|---|---|---|\n"
+            f"{rows}\n"
+            f"---\n\n"
+            f"**🧠 Architecture**: ResNet-18 (512-d) + Swin-Tiny (768-d) → Fusion(1280→512) → Head(3)\n\n"
+            f"**Checkpoint**: `cnn_swin_thickness_best.pth` &nbsp;|&nbsp; **Device**: `{DEVICE.upper()}`\n"
         )
         return result
 
@@ -127,8 +130,7 @@ def predict_batch(images: list):
 
     model = get_model()
     results_parts = []
-    oil_count = 0
-    clean_count = 0
+    class_counts = {cls: 0 for cls in CLASS_LABELS}
 
     for idx, img_data in enumerate(images, start=1):
         try:
@@ -154,45 +156,41 @@ def predict_batch(images: list):
                 logits = model(tensor)
                 probs = torch.softmax(logits, dim=1).squeeze(0).cpu().numpy()
 
-            p_no_oil = float(probs[0]) * 100
-            p_oil    = float(probs[1]) * 100
-            is_oil   = p_oil >= (OIL_THRESHOLD * 100)
+            pred_idx   = int(np.argmax(probs))
+            pred_class = CLASS_LABELS[pred_idx]
+            confidence = float(probs[pred_idx]) * 100
+            bg_color, text_color, emoji = CLASS_COLORS[pred_class]
+            class_counts[pred_class] += 1
 
-            if is_oil:
-                oil_count += 1
-                part = (
-                    f'<div style="background:#FFEBEE; border-left:5px solid #B71C1C; '
-                    f'padding:12px 16px; border-radius:8px; margin-bottom:10px;">'
-                    f'<span style="font-size:1.15rem; font-weight:800; color:#B71C1C;">'
-                    f'🚨 Image {idx}: {filename} &mdash; OIL DETECTED</span><br>'
-                    f'<span style="font-size:0.85rem; color:#333;">Oil Probability: <b>{p_oil:.2f}%</b> &nbsp;|&nbsp; Clean Sea: {p_no_oil:.2f}%</span>'
-                    f'</div>'
-                )
-            else:
-                clean_count += 1
-                part = (
-                    f'<div style="background:#E8F5E9; border-left:5px solid #2E7D32; '
-                    f'padding:12px 16px; border-radius:8px; margin-bottom:10px;">'
-                    f'<span style="font-size:1.15rem; font-weight:800; color:#2E7D32;">'
-                    f'✅ Image {idx}: {filename} &mdash; NO OIL</span><br>'
-                    f'<span style="font-size:0.85rem; color:#333;">Clean Sea: <b>{p_no_oil:.2f}%</b> &nbsp;|&nbsp; Oil Probability: {p_oil:.2f}%</span>'
-                    f'</div>'
-                )
+            # Per-class probabilities inline
+            prob_str = " &nbsp;|&nbsp; ".join(
+                [f"{CLASS_COLORS[cls][2]} {cls}: {probs[i]*100:.1f}%" for i, cls in enumerate(CLASS_LABELS)]
+            )
 
+            part = (
+                f'<div style="background:{bg_color}; border-left:5px solid {text_color}; '
+                f'padding:12px 16px; border-radius:8px; margin-bottom:10px;">'
+                f'<span style="font-size:1.15rem; font-weight:800; color:{text_color};">'
+                f'{emoji} Image {idx}: {filename} &mdash; {pred_class}</span><br>'
+                f'<span style="font-size:0.85rem; color:#333;">Confidence: <b>{confidence:.1f}%</b> &nbsp;|&nbsp; {prob_str}</span>'
+                f'</div>'
+            )
             results_parts.append(part)
 
         except Exception as e:
-            results_parts.append(
-                f"### Image {idx}\n\n**Error:** `{e}`\n\n"
-            )
+            results_parts.append(f"### Image {idx}\n\n**Error:** `{e}`\n\n")
+
+    # Summary counts
+    counts_str = " &nbsp;|&nbsp; ".join(
+        [f"{CLASS_COLORS[cls][2]} {cls}: **{class_counts[cls]}**" for cls in CLASS_LABELS]
+    )
 
     header = (
         f'<div style="background:#E3F2FD; border-left:6px solid #1565C0; '
         f'padding:14px 18px; border-radius:8px; margin-bottom:16px;">'
         f'<span style="font-size:1.3rem; font-weight:800; color:#0D47A1;">'
         f'Batch Analysis Complete &mdash; {len(images)} image(s) processed</span><br>'
-        f'<span style="font-size:0.92rem; color:#333;">'
-        f'🚨 Oil Detected: <b>{oil_count}</b> &nbsp;|&nbsp; ✅ Clean: <b>{clean_count}</b></span>'
+        f'<span style="font-size:0.92rem; color:#333;">{counts_str}</span>'
         f'</div>\n\n'
     )
 
@@ -251,27 +249,34 @@ def build_app():
         # Header
         gr.HTML("""
         <div id="header-banner">
-            <h1>🛰️ Sentinel-1 SAR Oil Spill Detector</h1>
-            <p>Hybrid CNN (ResNet-18) + Swin Transformer (Swin-Tiny) Deep Learning Architecture &nbsp;&middot;&nbsp;
-               <span>cnn_swin_v2_best.pth</span>
+            <h1>🛰️ SAR Oil Spill Thickness Classifier</h1>
+            <p>Hybrid CNN (ResNet-18) + Swin Transformer (Swin-Tiny) &nbsp;&middot;&nbsp;
+               <span>cnn_swin_thickness_best.pth &nbsp;&middot;&nbsp; 3-Class Thickness</span>
             </p>
         </div>
         """)
 
         # Architecture Explainer
-        with gr.Accordion("ℹ️ Model Architecture & Pipeline Details", open=False):
+        with gr.Accordion("ℹ️ Model Architecture & Thickness Classes", open=False):
             gr.Markdown("""
-### 🧠 CNN-Swin Hybrid Architecture (`cnn_swin_v2_best.pth`)
+### 🧠 CNN-Swin Hybrid Architecture (`cnn_swin_thickness_best.pth`)
 
 | Branch | Backbone | Features | Purpose |
 |---|---|---|---|
-| **CNN Branch** | **ResNet-18** (4 stages) | 512-dim | Captures local spatial textures, sharp edges, and slick boundaries |
-| **Swin Branch** | **Swin-Tiny** (Window 7, Patch 4) | 768-dim | Captures global contextual dependencies across the SAR scene |
-| **Feature Fusion** | Concatenation | **1280-dim** | Combined representation |
-| **Classification Head** | Deep MLP Trunk | 2 classes | `1280 → Linear(512) → BN → ReLU → Dropout(0.3) → Linear(128) → ReLU → Dropout(0.3) → Linear(2)` |
+| **CNN Branch** | **ResNet-18** (4 stages) | 512-dim | Local spatial textures, slick edges & boundaries |
+| **Swin Branch** | **Swin-Tiny** (Window 7, Patch 4) | 768-dim | Global contextual dependencies across SAR scene |
+| **Fusion Trunk** | `Linear(1280→512) → BN → ReLU` | 512-dim | Fused multi-scale representation |
+| **Thickness Head** | `Linear(512→3)` | 3 classes | Oil thickness prediction |
 
-- **Classes**: `0: No_Oil` (Clean Sea / Look-alikes), `1: Oil` (Marine Oil Spill)
-- **Input Dimensions**: Sentinel-1 SAR normalized tensor `(3, 224, 224)`
+### 🛢️ Thickness Classes
+
+| Class | Description | SAR Signature |
+|---|---|---|
+| 🟡 **Thin_Sheen** | Light surface film, minimal impact | Faint backscatter dampening |
+| 🟠 **Moderate** | Intermediate emulsion, notable extent | Clear SAR signature |
+| 🔴 **Thick_Emulsified** | Heavy emulsion, immediate response needed | Strong backscatter suppression |
+
+**Input**: Sentinel-1 SAR image normalized to `(3, 224, 224)`
             """)
 
         device_label = "GPU (CUDA)" if DEVICE == "cuda" else "CPU"
@@ -289,7 +294,7 @@ def build_app():
                         )
                         with gr.Row():
                             predict_btn = gr.Button(
-                                "🔍 Detect Oil Spill",
+                                "🔍 Classify Thickness",
                                 elem_id="predict-btn",
                                 variant="primary",
                             )
@@ -300,20 +305,20 @@ def build_app():
                             )
 
                     with gr.Column(scale=1):
-                        gr.Markdown("### Detection Result")
+                        gr.Markdown("### Classification Result")
                         output_md = gr.Markdown(
-                            value="*Upload a Sentinel-1 SAR image and click **Detect Oil Spill** to analyze.*",
+                            value="*Upload a Sentinel-1 SAR image and click **Classify Thickness** to analyze.*",
                             elem_classes=["output-md"],
                         )
                         gr.HTML(f"""
                         <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
                             <span class="badge">Device: {device_label}</span>
-                            <span class="badge">Model: cnn_swin_v2_best.pth</span>
-                            <span class="badge">Backbone: ResNet-18 + Swin-Tiny</span>
+                            <span class="badge">Model: cnn_swin_thickness_best.pth</span>
+                            <span class="badge">Classes: Thin / Moderate / Thick</span>
                         </div>
                         """)
 
-                # Sample images if present
+                # Sample images
                 example_dir = os.path.dirname(os.path.abspath(__file__))
                 example_images = []
                 for ext in ["*.jpg", "*.jpeg", "*.png", "*.tif", "*.tiff"]:
@@ -330,7 +335,7 @@ def build_app():
 
             # Tab 2: Batch Analysis
             with gr.TabItem("📂 Batch SAR Processing"):
-                gr.Markdown("### Upload Multiple SAR Images\nRun high-throughput oil spill detection on multiple Sentinel-1 SAR scenes simultaneously.")
+                gr.Markdown("### Upload Multiple SAR Images\nRun thickness classification on multiple Sentinel-1 SAR scenes simultaneously.")
                 with gr.Row(equal_height=True):
                     with gr.Column(scale=1):
                         batch_gallery = gr.Gallery(
@@ -341,19 +346,19 @@ def build_app():
                             object_fit="contain",
                         )
                         with gr.Row():
-                            batch_btn = gr.Button("⚡ Analyze All Images", variant="primary")
+                            batch_btn = gr.Button("⚡ Classify All Images", variant="primary")
                             batch_clear_btn = gr.ClearButton([batch_gallery], value="Clear All", variant="secondary")
 
                     with gr.Column(scale=1):
                         gr.Markdown("### Batch Summary & Results")
                         batch_output_md = gr.Markdown(
-                            value="*Upload multiple SAR images and click **Analyze All Images**.*",
+                            value="*Upload multiple SAR images and click **Classify All Images**.*",
                             elem_classes=["output-md"],
                         )
                         gr.HTML(f"""
                         <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
                             <span class="badge">Device: {device_label}</span>
-                            <span class="badge">Mode: High-Throughput Batch</span>
+                            <span class="badge">Mode: Batch Thickness Classification</span>
                         </div>
                         """)
 
@@ -362,7 +367,7 @@ def build_app():
         # Footer
         gr.HTML("""
         <p style="text-align:center; font-size:0.85rem; color:#777; margin-top:24px;">
-            Sentinel-1 SAR Oil Spill Detector &nbsp;&middot;&nbsp; CNN + Swin Transformer Hybrid Architecture
+            SAR Oil Thickness Classifier &nbsp;&middot;&nbsp; CNN + Swin Transformer Hybrid &nbsp;&middot;&nbsp; cnn_swin_thickness_best.pth
         </p>
         """)
 
@@ -372,9 +377,9 @@ def build_app():
 # Module level initialization (Hugging Face Spaces compatible)
 # ---------------------------------------------------------------------------
 print(f"[Init] PyTorch: {torch.__version__} | Device: {DEVICE}")
-print(f"[Init] Loading CNN-Swin v2 model ({MODEL_CKPT_PATH})...")
+print(f"[Init] Loading CNN-Swin thickness model ({MODEL_CKPT_PATH})...")
 get_model()
-print("[Init] CNN-Swin v2 model loaded successfully ✓")
+print("[Init] Thickness model loaded successfully ✓")
 
 demo = build_app()
 

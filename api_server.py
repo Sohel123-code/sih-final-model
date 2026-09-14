@@ -1,8 +1,8 @@
 """
-api_server.py — FastAPI REST API for CNN-Swin SAR Oil Spill Detection
+api_server.py — FastAPI REST API for CNN-Swin SAR Oil Thickness Classification
 
-Model: cnn_swin_v2_best.pth
-Architecture: CNN (ResNet-18) + Swin Transformer (Swin-Tiny)
+Model: cnn_swin_thickness_best.pth
+Architecture: CNN (ResNet-18) + Swin Transformer (Swin-Tiny) -> 3 Thickness Classes
 
 Endpoints:
   GET  /               — Health & model architecture info
@@ -19,18 +19,19 @@ from PIL import Image
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict
 import torch.nn.functional as F
 import torchvision.transforms as T
 
-from model import load_oil_detector
+from model import load_model
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-_BASE_DIR         = os.path.dirname(os.path.abspath(__file__))
-CKPT_OIL_DETECTOR = os.path.join(_BASE_DIR, "cnn_swin_v2_best.pth")
-DEVICE            = "cuda" if torch.cuda.is_available() else "cpu"
+_BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
+CKPT_THICKNESS = os.path.join(_BASE_DIR, "cnn_swin_thickness_best.pth")
+DEVICE          = "cuda" if torch.cuda.is_available() else "cpu"
+CLASS_LABELS    = ["Thin_Sheen", "Moderate", "Thick_Emulsified"]
 
 TRANSFORM = T.Compose([
     T.Resize((224, 224)),
@@ -41,22 +42,22 @@ TRANSFORM = T.Compose([
 # ---------------------------------------------------------------------------
 # Model Singleton
 # ---------------------------------------------------------------------------
-_oil_model = None
+_thickness_model = None
 
 def get_model():
-    global _oil_model
-    if _oil_model is None:
-        print(f"[API] Loading CNN-Swin v2 Oil Detector on {DEVICE}...")
-        _oil_model = load_oil_detector(CKPT_OIL_DETECTOR, device=DEVICE)
+    global _thickness_model
+    if _thickness_model is None:
+        print(f"[API] Loading CNN-Swin Thickness Classifier on {DEVICE}...")
+        _thickness_model = load_model(CKPT_THICKNESS, device=DEVICE)
         print("[API] Model loaded successfully ✓")
-    return _oil_model
+    return _thickness_model
 
 # ---------------------------------------------------------------------------
 # FastAPI App
 # ---------------------------------------------------------------------------
 app = FastAPI(
-    title="SAR Oil Spill Detection API (CNN-Swin v2)",
-    description="Hybrid CNN (ResNet-18) + Swin Transformer (Swin-Tiny) inference for Sentinel-1 SAR oil spill detection.",
+    title="SAR Oil Thickness Classification API (CNN-Swin)",
+    description="Hybrid CNN (ResNet-18) + Swin Transformer (Swin-Tiny) inference for SAR oil spill thickness classification.",
     version="2.0.0",
 )
 
@@ -73,17 +74,16 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 class PredictResponse(BaseModel):
     filename: Optional[str]
-    is_oil: bool
-    oil_probability: float
-    no_oil_probability: float
-    status: str
+    predicted_class: str
+    confidence: float
+    probabilities: Dict[str, float]
     architecture: str
     device: str
 
 # ---------------------------------------------------------------------------
 # Core Inference
 # ---------------------------------------------------------------------------
-def _run_inference(pil_img: Image.Image, oil_threshold: float = 0.5) -> dict:
+def _run_inference(pil_img: Image.Image) -> dict:
     model = get_model()
     if pil_img.mode != "RGB":
         pil_img = pil_img.convert("RGB")
@@ -94,16 +94,17 @@ def _run_inference(pil_img: Image.Image, oil_threshold: float = 0.5) -> dict:
         logits = model(tensor)
         probs  = F.softmax(logits, dim=1).cpu().squeeze(0).numpy()
 
-    p_no_oil = float(probs[0])
-    p_oil    = float(probs[1])
-    is_oil   = p_oil >= oil_threshold
+    top_idx = int(np.argmax(probs))
+    pred_label = CLASS_LABELS[top_idx]
+    confidence = float(probs[top_idx])
+
+    prob_dict = {label: float(round(probs[i], 4)) for i, label in enumerate(CLASS_LABELS)}
 
     return {
-        "is_oil": is_oil,
-        "oil_probability": round(p_oil, 4),
-        "no_oil_probability": round(p_no_oil, 4),
-        "status": "OIL_DETECTED" if is_oil else "CLEAN_SEA",
-        "architecture": "ResNet-18 (512-d) + Swin-Tiny (768-d) -> Linear(2)",
+        "predicted_class": pred_label,
+        "confidence": round(confidence, 4),
+        "probabilities": prob_dict,
+        "architecture": "ResNet-18 (512-d) + Swin-Tiny (768-d) -> Linear(512) -> Linear(3)",
         "device": DEVICE,
     }
 
@@ -114,7 +115,8 @@ def _run_inference(pil_img: Image.Image, oil_threshold: float = 0.5) -> dict:
 def health():
     return {
         "status": "running",
-        "model": "cnn_swin_v2_best.pth",
+        "model": "cnn_swin_thickness_best.pth",
+        "classes": CLASS_LABELS,
         "backbone": "ResNet-18 + Swin-Tiny Hybrid",
         "device": DEVICE,
     }
@@ -126,7 +128,6 @@ def health_check():
 @app.post("/predict", response_model=PredictResponse)
 async def predict_single(
     file: UploadFile = File(...),
-    oil_threshold: float = 0.5,
 ):
     try:
         contents = await file.read()
@@ -134,35 +135,31 @@ async def predict_single(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image file: {e}")
 
-    result = _run_inference(pil_img, oil_threshold=oil_threshold)
+    result = _run_inference(pil_img)
     result["filename"] = file.filename
     return result
 
 @app.post("/predict-batch")
 async def predict_batch(
     files: list[UploadFile] = File(...),
-    oil_threshold: float = 0.5,
 ):
     results = []
-    oil_count = 0
-    clean_count = 0
 
     for f in files:
         try:
             contents = await f.read()
             pil_img  = Image.open(io.BytesIO(contents))
-            result   = _run_inference(pil_img, oil_threshold=oil_threshold)
+            result   = _run_inference(pil_img)
             result["filename"] = f.filename
             result["error"]    = None
-
-            if result["is_oil"]:
-                oil_count += 1
-            else:
-                clean_count += 1
         except Exception as e:
             result = {
                 "filename": f.filename,
-                "is_oil": None,
+                "predicted_class": None,
+                "confidence": 0.0,
+                "probabilities": {},
+                "architecture": "",
+                "device": DEVICE,
                 "error": str(e),
             }
 
@@ -170,8 +167,6 @@ async def predict_batch(
 
     return {
         "total": len(files),
-        "oil_detected": oil_count,
-        "clean": clean_count,
         "results": results,
     }
 
