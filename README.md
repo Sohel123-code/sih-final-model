@@ -2,7 +2,7 @@
 title: SAR Oil Spill Detector & Thickness Classifier
 emoji: 🛰️
 colorFrom: green
-colorTo: emerald
+colorTo: green
 sdk: gradio
 sdk_version: 6.26.0
 app_file: app.py
