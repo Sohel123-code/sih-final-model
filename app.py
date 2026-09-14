@@ -12,7 +12,14 @@ Architecture:
 try:
     import spaces
 except Exception:
-    pass
+    class spaces:
+        @staticmethod
+        def GPU(func=None, *args, **kwargs):
+            if callable(func):
+                return func
+            def decorator(fn):
+                return fn
+            return decorator
 
 import sys
 if hasattr(sys.stdout, 'reconfigure'):
@@ -77,6 +84,7 @@ def preprocess(pil_image: Image.Image) -> torch.Tensor:
 # ---------------------------------------------------------------------------
 # Single Image Inference
 # ---------------------------------------------------------------------------
+@spaces.GPU
 def predict(image: Image.Image):
     if image is None:
         return "Please upload a Sentinel-1 SAR image first."
@@ -130,6 +138,7 @@ def predict(image: Image.Image):
 # ---------------------------------------------------------------------------
 # Batch Inference (Multiple Images)
 # ---------------------------------------------------------------------------
+@spaces.GPU
 def predict_batch(images: list):
     if not images:
         return "Please upload one or more Sentinel-1 SAR images."
