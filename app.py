@@ -134,7 +134,7 @@ def predict(image: Image.Image):
                 <!-- Stage 1 Banner -->
                 <div style="background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%); color: white; padding: 20px 24px; border-radius: 12px; margin-bottom: 16px; box-shadow: 0 4px 14px rgba(153, 27, 27, 0.3);">
                     <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #fca5a5;">Stage 1: Binary Detection Result</div>
-                    <div style="font-size: 1.7rem; font-weight: 900; margin: 4px 0 2px 0; color: #ffffff;">🛢️ OIL SPILL DETECTED</div>
+                    <div style="font-size: 1.7rem; font-weight: 900; margin: 4px 0 2px 0; color: #ffffff;">OIL SPILL DETECTED</div>
                     <div style="font-size: 0.95rem; color: #fecaca;">Detection Confidence: <b>{p_oil*100:.1f}%</b> &nbsp;|&nbsp; Clean Sea Probability: {p_no_oil*100:.1f}%</div>
                 </div>
 
@@ -147,7 +147,7 @@ def predict(image: Image.Image):
 
                 <!-- Thickness Probabilities Table -->
                 <div style="background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
-                    <div style="font-size: 0.95rem; font-weight: 700; color: #e2e8f0; margin-bottom: 10px;">📊 Stage 2 Thickness Probabilities</div>
+                    <div style="font-size: 0.95rem; font-weight: 700; color: #e2e8f0; margin-bottom: 10px;">Stage 2 Thickness Probabilities</div>
                     <table style="width: 100%; border-collapse: collapse; color: #cbd5e1; font-size: 0.9rem;">
                         <thead>
                             <tr style="border-bottom: 2px solid #334155; text-align: left;">
@@ -164,7 +164,7 @@ def predict(image: Image.Image):
 
                 <!-- NOAA ADIOS Match -->
                 <div style="background: #1e1b4b; border: 1px solid #3730a3; border-radius: 12px; padding: 16px;">
-                    <div style="font-size: 0.95rem; font-weight: 700; color: #c7d2fe; margin-bottom: 8px;">🏛️ NOAA ADIOS Grounded Oil Properties</div>
+                    <div style="font-size: 0.95rem; font-weight: 700; color: #c7d2fe; margin-bottom: 8px;">NOAA ADIOS Grounded Oil Properties</div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; font-size: 0.88rem; color: #e0e7ff;">
                         <div><b>Mapped Oil:</b> <br><span style="color:#a5b4fc;">{noaa_name}</span></div>
                         <div><b>API Gravity:</b> <br><span style="color:#a5b4fc;">{noaa_api}°</span></div>
@@ -180,7 +180,7 @@ def predict(image: Image.Image):
             <div style="font-family: system-ui, -apple-system, sans-serif;">
                 <div style="background: linear-gradient(135deg, #14532d 0%, #166534 100%); color: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 14px rgba(22, 101, 52, 0.3);">
                     <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #86efac;">Stage 1: Binary Detection Result</div>
-                    <div style="font-size: 1.7rem; font-weight: 900; margin: 4px 0 6px 0; color: #ffffff;">🌊 CLEAN SEA (NON-OIL)</div>
+                    <div style="font-size: 1.7rem; font-weight: 900; margin: 4px 0 6px 0; color: #ffffff;">CLEAN SEA (NON-OIL)</div>
                     <div style="font-size: 0.95rem; color: #bbf7d0;">Clean Sea Confidence: <b>{p_no_oil*100:.1f}%</b> &nbsp;|&nbsp; Oil Prob: {p_oil*100:.1f}%</div>
                     <div style="margin-top: 12px; font-size: 0.9rem; color: #dcfce7; line-height: 1.5;">No marine oil slick was detected in this Sentinel-1 SAR scene. Stage 2 thickness evaluation skipped.</div>
                 </div>
@@ -285,16 +285,16 @@ def predict_batch(images: list):
     table_rows_html = ""
     for r in rows_data:
         if r["is_oil"]:
-            status_badge = "<span style='background:#7f1d1d; color:#fecaca; padding:4px 10px; border-radius:6px; font-weight:700; font-size:0.8rem;'>🛢️ OIL DETECTED</span>"
+            status_badge = "<span style='background:#7f1d1d; color:#fecaca; padding:4px 10px; border-radius:6px; font-weight:700; font-size:0.8rem;'>OIL DETECTED</span>"
             if r["thick_class"] == "Thin_Sheen":
-                thick_badge = "<span style='background:#7c2d12; color:#ffedd5; padding:4px 10px; border-radius:6px; font-weight:700; font-size:0.8rem;'>🟡 Thin Sheen</span>"
+                thick_badge = "<span style='background:#7c2d12; color:#ffedd5; padding:4px 10px; border-radius:6px; font-weight:700; font-size:0.8rem;'>Thin Sheen</span>"
             elif r["thick_class"] == "Moderate":
-                thick_badge = "<span style='background:#713f12; color:#fef08a; padding:4px 10px; border-radius:6px; font-weight:700; font-size:0.8rem;'>🟠 Moderate</span>"
+                thick_badge = "<span style='background:#713f12; color:#fef08a; padding:4px 10px; border-radius:6px; font-weight:700; font-size:0.8rem;'>Moderate</span>"
             else:
-                thick_badge = "<span style='background:#991b1b; color:#fecaca; padding:4px 10px; border-radius:6px; font-weight:700; font-size:0.8rem;'>🔴 Thick Emulsified</span>"
+                thick_badge = "<span style='background:#991b1b; color:#fecaca; padding:4px 10px; border-radius:6px; font-weight:700; font-size:0.8rem;'>Thick Emulsified</span>"
             thick_conf_str = f"<b>{r['thick_conf']:.1f}%</b>"
         else:
-            status_badge = "<span style='background:#14532d; color:#bbf7d0; padding:4px 10px; border-radius:6px; font-weight:700; font-size:0.8rem;'>🌊 CLEAN SEA</span>"
+            status_badge = "<span style='background:#14532d; color:#bbf7d0; padding:4px 10px; border-radius:6px; font-weight:700; font-size:0.8rem;'>CLEAN SEA</span>"
             thick_badge = "<span style='color:#64748b; font-size:0.85rem;'>-</span>"
             thick_conf_str = "<span style='color:#64748b; font-size:0.85rem;'>-</span>"
 
@@ -320,13 +320,13 @@ def predict_batch(images: list):
             </div>
 
             <div style="background: #1e293b; border: 1px solid #dc2626; border-radius: 12px; padding: 18px; text-align: center;">
-                <div style="color: #f87171; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">🛢️ Oil Spills</div>
+                <div style="color: #f87171; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Oil Spills</div>
                 <div style="color: #ef4444; font-size: 2.2rem; font-weight: 900; margin-top: 4px;">{oil_count}</div>
                 <div style="color: #fca5a5; font-size: 0.8rem; font-weight: 600;">{oil_pct:.1f}% of total</div>
             </div>
 
             <div style="background: #1e293b; border: 1px solid #16a34a; border-radius: 12px; padding: 18px; text-align: center;">
-                <div style="color: #4ade80; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">🌊 Clean Sea</div>
+                <div style="color: #4ade80; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Clean Sea</div>
                 <div style="color: #22c55e; font-size: 2.2rem; font-weight: 900; margin-top: 4px;">{clean_count}</div>
                 <div style="color: #86efac; font-size: 0.8rem; font-weight: 600;">{clean_pct:.1f}% of total</div>
             </div>
@@ -334,16 +334,16 @@ def predict_batch(images: list):
 
         <!-- Oil Thickness Distribution Banner -->
         <div style="background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;">
-            <div style="color: #e2e8f0; font-size: 0.95rem; font-weight: 700; margin-bottom: 10px;">📊 Oil Thickness Breakdown (for {oil_count} detected spills)</div>
+            <div style="color: #e2e8f0; font-size: 0.95rem; font-weight: 700; margin-bottom: 10px;">Oil Thickness Breakdown (for {oil_count} detected spills)</div>
             <div style="display: flex; gap: 12px; flex-wrap: wrap;">
                 <span style="background: #7c2d12; color: #ffedd5; padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; border: 1px solid #ea580c;">
-                    🟡 Thin Sheen: <b>{thick_counts['Thin_Sheen']}</b>
+                    Thin Sheen: <b>{thick_counts['Thin_Sheen']}</b>
                 </span>
                 <span style="background: #713f12; color: #fef08a; padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; border: 1px solid #ca8a04;">
-                    🟠 Moderate: <b>{thick_counts['Moderate']}</b>
+                    Moderate: <b>{thick_counts['Moderate']}</b>
                 </span>
                 <span style="background: #7f1d1d; color: #fecaca; padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; border: 1px solid #dc2626;">
-                    🔴 Thick Emulsified: <b>{thick_counts['Thick_Emulsified']}</b>
+                    Thick Emulsified: <b>{thick_counts['Thick_Emulsified']}</b>
                 </span>
             </div>
         </div>
@@ -351,7 +351,7 @@ def predict_batch(images: list):
         <!-- Detailed Results Table -->
         <div style="background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
             <div style="background: #1e293b; padding: 14px 18px; font-weight: 700; color: #f8fafc; font-size: 0.95rem; border-bottom: 1px solid #334155;">
-                📋 Detailed Scene Analysis Results
+                Detailed Scene Analysis Results
             </div>
             <div style="max-height: 480px; overflow-y: auto;">
                 <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem; text-align: left;">
@@ -429,7 +429,7 @@ def build_app():
         # Header
         gr.HTML("""
         <div id="header-banner">
-            <h1>🛰️ Hierarchical SAR Oil Spill Detector & Thickness Classifier</h1>
+            <h1>Hierarchical SAR Oil Spill Detector & Thickness Classifier</h1>
             <p>Stage 1: Binary Oil Detection (cnn_swin_v2_best.pth) &nbsp;&middot;&nbsp;
                Stage 2: 3-Class Thickness Classification (cnn_swin_thickness_best.pth)
             </p>
@@ -437,9 +437,9 @@ def build_app():
         """)
 
         # Architecture Explainer
-        with gr.Accordion("ℹ️ Hierarchical Pipeline Architecture & Thickness Classes", open=False):
+        with gr.Accordion("Hierarchical Pipeline Architecture & Thickness Classes", open=False):
             gr.Markdown("""
-### 🧠 Hierarchical Pipeline Architecture
+### Hierarchical Pipeline Architecture
 
 ```
                       Input SAR Image (224×224)
@@ -465,13 +465,13 @@ def build_app():
                             [Thin_Sheen]    [Moderate]  [Thick_Emulsified]
 ```
 
-### 🛢️ Thickness Classes
+### Thickness Classes
 
 | Class | Description | SAR Signature |
 |---|---|---|
-| 🟡 **Thin_Sheen** | Light surface film, minimal impact | Faint backscatter dampening |
-| 🟠 **Moderate** | Intermediate emulsion, notable extent | Clear SAR signature |
-| 🔴 **Thick_Emulsified** | Heavy emulsion, immediate response needed | Strong backscatter suppression |
+| **Thin_Sheen** | Light surface film, minimal impact | Faint backscatter dampening |
+| **Moderate** | Intermediate emulsion, notable extent | Clear SAR signature |
+| **Thick_Emulsified** | Heavy emulsion, immediate response needed | Strong backscatter suppression |
 
 **Input**: Sentinel-1 SAR image normalized to `(3, 224, 224)`
             """)
@@ -480,7 +480,7 @@ def build_app():
 
         with gr.Tabs():
             # Tab 1: Single Image
-            with gr.TabItem("🖼️ Single Image Analysis"):
+            with gr.TabItem("Single Image Analysis"):
                 with gr.Row(equal_height=True):
                     with gr.Column(scale=1):
                         gr.Markdown("### Upload SAR Image")
@@ -491,7 +491,7 @@ def build_app():
                         )
                         with gr.Row():
                             predict_btn = gr.Button(
-                                "🔍 Run Detection & Thickness Analysis",
+                                "Run Detection & Thickness Analysis",
                                 elem_id="predict-btn",
                                 variant="primary",
                             )
@@ -530,7 +530,7 @@ def build_app():
                 image_input.upload(fn=predict, inputs=[image_input], outputs=[output_html])
 
             # Tab 2: Batch Analysis
-            with gr.TabItem("📂 Batch SAR Processing"):
+            with gr.TabItem("Batch SAR Processing"):
                 gr.Markdown("### Upload Multiple SAR Images\nRun hierarchical detection and thickness classification on multiple Sentinel-1 SAR scenes simultaneously.")
                 with gr.Row(equal_height=True):
                     with gr.Column(scale=1):
@@ -542,7 +542,7 @@ def build_app():
                             object_fit="contain",
                         )
                         with gr.Row():
-                            batch_btn = gr.Button("⚡ Analyze All Images", variant="primary")
+                            batch_btn = gr.Button("Analyze All Images", variant="primary")
                             batch_clear_btn = gr.ClearButton([batch_gallery], value="Clear All", variant="secondary")
 
                     with gr.Column(scale=1):
@@ -574,7 +574,7 @@ def build_app():
 print(f"[Init] PyTorch: {torch.__version__} | Device: {DEVICE}")
 print("[Init] Loading Stage 1 (Oil Detector) and Stage 2 (Thickness Model)...")
 get_models()
-print("[Init] Both models loaded successfully ✓")
+print("[Init] Both models loaded successfully")
 
 demo = build_app()
 
