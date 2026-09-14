@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+cloudflared.exe
+*.log
+tunnel.txt
+.venv/
