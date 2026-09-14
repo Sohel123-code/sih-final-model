@@ -8,6 +8,12 @@ Architecture:
   - Fusion:      Concat(1280) → Linear(512) → BN → ReLU
   - Head:        Linear(512, 3) → [Thin_Sheen, Moderate, Thick_Emulsified]
 """
+
+try:
+    import spaces
+except Exception:
+    pass
+
 import sys
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
